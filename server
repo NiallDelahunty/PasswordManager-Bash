@@ -1,0 +1,80 @@
+#!/bin/bash
+#check if server pipe already exists if not create it
+if [ ! -e "server.pipe" ]; then
+	mkfifo "server.pipe"
+fi
+#trap if control c is entered (ensure they want to actually quit)
+trap ctrl_c INT
+ctrl_count=0
+function ctrl_c() {
+	ctrl_count+=1
+	if [ $ctrl_count -gt 1 ]; then
+		rm "server.pipe"
+		exit 2
+	else
+        	echo " Woah! Are you sure you want to exit? (ctrl + c again to exit)"
+	fi
+}
+#server on loop waiting to read from server.pipe
+while true; do
+#read -r to prevent escape characters
+read -r -a input < server.pipe;
+	case "${input[1]}" in
+        	init)
+			#check if index 2 (username) is empty. "${input[0]}".pipe is clientid.pipe
+			if ! [ -z "${input[2]}" ];then
+				echo $(./init.sh "${input[2]}" &) > "${input[0]}".pipe
+			else
+				echo "Error: Make sure to enter username" > "${input[0]}".pipe
+			fi
+          		;;
+		insert)
+			#check if index 4 -> end is empty (i.e. login details)
+			if [ -z "${input[*]:4}" ];then
+				echo "Please enter login and password details" > "${input[0]}".pipe
+			else
+				echo $(./insert.sh "${input[2]}" "${input[3]}" "${input[*]:4}" &) > "${input[0]}".pipe
+
+			fi
+			;;
+
+		show)
+			echo $(./show.sh "${input[2]}" "${input[3]}"&) > "${input[0]}".pipe
+			;;
+
+		update)
+			#check if index 5 -> end is empty (i.e. login details)
+			 if [ -z "${input[*]:5}" ];then
+                                echo "Please enter login and password details" > "${input[0]}".pipe
+                        else
+				echo $(./insert.sh "${input[2]}" "${input[3]}" "${input[4]}" "${input[*]:5}" &) > "${input[0]}".pipe
+			fi
+			;;
+		rm)
+			echo $(./rm.sh "${input[2]}" "${input[3]}"&) > "${input[0]}".pipe
+			;;
+		ls)
+			#check if index 3 (service) is empty, pipe just username (index 2) if so otherwise both
+			if [ -z "${input[3]}" ];then
+				./ls.sh "${input[2]}" > "${input[0]}".pipe &
+			else
+				./ls.sh "${input[2]}" "${input[3]}" > "${input[0]}".pipe &
+			fi
+			;;
+
+		shutdown)
+			#remove server pipe and exit script
+			echo "exiting server, Thank you for using nialls password management system" > "${input[0]}".pipe
+			rm "server.pipe"
+			exit 0
+			;;
+		*)
+			#error message remove server pipe and exit script if request invalid
+			echo "Error: bad request"
+			rm "server.pipe"
+			exit 1
+
+
+	esac
+
+done

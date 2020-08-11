@@ -1,0 +1,41 @@
+#!/bin/bash
+
+username="$1"
+service="$2"
+path="$1/$2"
+
+#check for two parameters entered
+if [ $# -ne 2 ]; then
+        echo "Error: parameters problem"
+        exit 1
+fi
+#check that username exists
+if [ ! -e "$username" ]; then
+        echo "Error: user does not exist"
+        exit 2
+fi
+#check that service exists
+if [ ! -e "$path" ]; then
+        echo "Error: service does not exist"
+        exit 3
+fi
+
+#create lockname (user-service)
+tempbase=`basename "$service"`
+echo "base - $tempbase"
+lockname="$username-$tempbase"
+echo "$lockname"
+./P.sh "$lockname"
+
+echo "in lock"
+#If the service leads to a file then remove the file (service); else error message
+if [ -f "$path" ]; then
+        rm "$path"
+        echo "OK: service removed"
+        ./V.sh  "$lockname"
+        exit 0
+else
+        echo "Error: Please enter full service name"
+        ./V.sh  "$lockname"
+        exit 4
+fi

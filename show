@@ -1,0 +1,40 @@
+#!/bin/bash
+
+username="$1"
+service="$2"
+path="$username/$service"
+#Check if number of parameters is 2
+if [ $# -ne 2 ]; then
+	echo "Error: parameters problem"
+	exit 1
+fi
+#Check that username exists
+if [ ! -e "$username" ]; then
+	echo "Error: user does not exist"
+	exit 2
+fi
+#set up lockname for semaphore (P.sh) argument
+tempbase=`basename "$service"`
+lockname="$username-$tempbase"
+#Lock critical section
+./P.sh "$lockname"
+
+#check that service exists by checking that the path exists
+if [ ! -e "$path" ]; then
+	echo "Error: service does not exist"
+	./V.sh "$lockname"
+	exit 3
+fi
+#check if user has specified a service (e.g. bank/aib.ie instead of just bank)
+if [ -d "$path" ]; then
+	echo "Error: please specify a service within $service "
+	./V.sh "$lockname"
+	exit 4
+fi
+#Get login and password and save into variables (uses key words login: and password:)
+login=$(grep "login:" "$path" | cut -d':' -f2-)
+password=$(grep "password:" "$path" | cut -d':' -f2-)
+echo "$login"
+echo "$password"
+./V.sh "$lockname"
+exit 0

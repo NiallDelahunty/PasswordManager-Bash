@@ -1,0 +1,149 @@
+#!/bin/bash
+#check if clientid or req parameters are empty
+if [[ ! -z "$1" ]] && [[ ! -z "$2" ]]; then
+	client=$1
+	req=$2
+	user=$3
+	service=$4
+	#make client pipe if it doesn't exist
+	if [ ! -e "$client.pipe" ]; then
+        	mkfifo "$client.pipe"
+	fi
+
+#trap if control c is entered (ensure they want to actually quit)
+trap ctrl_c INT
+ctrl_count=0
+function ctrl_c() {
+        ctrl_count+=1
+        if [ $ctrl_count -gt 1 ]; then
+		rm "$client.pipe"
+                exit 2
+        else
+                echo " Woah! Are you sure you want to exit? (ctrl + c again to exit)"
+        fi
+}
+
+case "$req" in
+                init)
+			#If req parameter is init, send client, req and username details into server pipe, read and echo output from client pipe
+			echo "$client $req $user" > server.pipe
+			read message < "$client.pipe"; echo "$message"
+                        ;;
+                insert)
+#If req parameter is insert, username and service variables are checked if they are empty strings (-z). Users are prompted for login  and password. Client, req, username,service and login details into server pipe, read and eecho output from client pipe
+                        if [[ ! -z "$user" ]] && [[ ! -z "$service" ]];then
+				echo "Please write login"
+                                read login
+				echo "would you like an automatically generate password? (Y/N)?"
+				read answer
+				if [[ $answer == "Y" ]] || [[ $answer == "y" ]]; then
+					password=$(./generate.sh)
+					echo "Your password is: $password"
+				else
+                        		echo "Please write password"
+                        		read password
+				fi
+				#encrypt password
+				secret=$(./encrypt.sh "I<3Bash" "$password")
+				#This combines login and password and a \n inbetween
+                        	payload="login:${login} \npassword:${secret}"
+                        	echo "$client $req $user $service $payload" > server.pipe
+				read message < "$client.pipe"; echo "$message"
+                        else
+                                echo "Error: Please enter valid user and service"
+                        fi
+			;;
+
+                show)
+			#check that user and service are not empty variables. Pass details to server pipe. Read client pipe into array
+                         if [[ ! -z "$user" ]] && [[ ! -z "$service" ]];then
+				echo "$client $req $user $service" > server.pipe
+				read -a login < "$client.pipe";
+				#if length is greater than two it is an error message (grep the line for login: and password: so even  if more is written in the file only those lines are passed back.
+				if ! [ ${#login[@]} -gt 2 ]; then
+					#Decrypt password
+					new=$(./decrypt.sh "I<3Bash" "${login[1]}")
+					#print out login details
+					echo "$user's login for $service is: ${login[0]}"
+					echo "$user's password for $service is: $new"
+				else
+					#So that error message is printed out (print out entire array)
+					echo "${login[@]}"
+				fi
+			else
+				echo "Error: Please enter valid user and service"
+                        fi
+                        ;;
+                ls)
+			#Pass parameters onto server.sh, cat client pipe to show tree structure
+                        echo "$client $req $user $service" > server.pipe
+			cat "$client.pipe"
+
+                        ;;
+                rm)
+			#check that user and service are not empty variables. Pass details to server pipe. Read client pipe into variable
+                        if [[ ! -z "$user" ]] && [[ ! -z "$service" ]];then
+                                echo "$client $req $user $service" > server.pipe
+				read message < "$client.pipe"; echo "$message"
+                        else
+                                echo "Error: Please enter valid user and service"
+                        fi
+                        ;;
+                edit)
+			#check that user and service are not empty variables. Pass details to server pipe. Read client pipe into array.
+                         if [[ ! -z "$user" ]] && [[ ! -z "$service" ]];then
+				 echo "$client show $user $service" > server.pipe
+                               	 read -a update < "$client.pipe";
+                               	 #if length is greater than two than it is an error message
+                               	 if ! [ ${#update[@]} -gt 2 ]; then
+					#Make a temporary file
+                                        temp=$(mktemp)
+					#decrpyt password for user. Write in details into temp file and allow user to edit (vi)
+					reveal=$(./decrypt.sh "I<3Bash" "${update[1]}")
+					echo "#Please write new login and password after 'login' and 'password'. It will not be accepted otherwise" > $temp
+					echo "login: ${update[0]}" >> $temp
+					echo "password: $reveal" >> $temp
+					vi $temp
+
+					#Get the details after keywords 'login:' and 'password'
+					login=$(grep "login:" $temp | cut -d':' -d':' -f2-)
+					password=$(grep "password:" $temp | cut -d':' -f2-)
+					#Check that there are login details after said keywords (i.e. that the format is correct, something entered and login:/password: not deleted
+					if [[ ! -z "$login" ]] && [[ ! -z "$password" ]]; then
+						#encrypt password again
+						hide=$(./encrypt.sh "I<3Bash" "$password")
+						payload="login: $login \npassword: $hide"
+                                		echo "$client update $user $service f $payload" > server.pipe
+                                		read confirm < "$client.pipe"; echo "$confirm"
+						#delete temporary file
+						rm $temp
+					else
+						echo "Please rerun request, make sure to not delete login: or password: in edit mode"
+                               		fi
+				 else
+                                        #So that error message is printed out
+                                        echo "${update[@]}"
+                                fi
+                        else
+                                echo "Error: Please enter valid user and service"
+                        fi
+                        ;;
+
+                shutdown)
+			#Send shutdown request to server, cat pipe contents, remove client pipe and exit script
+			echo "$client $req" > server.pipe
+			cat "$client.pipe"
+			rm "$client.pipe"
+                        exit 0
+                        ;;
+                *)
+			#If $req is not valid output message, remove client pipe and exit script
+                        echo "Error: bad request"
+			rm "$client.pipe"
+                        exit 1
+
+
+        esac
+else
+        echo "Please enter valid clientId and request"
+fi

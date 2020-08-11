@@ -1,0 +1,70 @@
+#!/bin/bash
+
+username="$1"
+service="$2"
+
+#check if there are three or four parameters and assign variable update to none if only 3 (i.e. no update)
+if [ "$#" -eq 4 ];then
+	update="$3"
+	payload="$4"
+else
+	update="none"
+	payload="$3"
+fi
+#Create variable which stores the path and variable which stores the string 'f' (for updating)
+path="$username/$service"
+respect="f"
+
+#Make sure the number of parameters are either 3 or 4
+if [[ "$#" -lt 3 ]] || [[ "$#" -gt 4 ]]; then
+	echo "Error: parameters problem"
+	exit 1
+fi
+#check if username (argument 1) is valid
+if [ ! -e "$username" ]; then
+	echo "Error: user does not exist"
+	exit 2
+fi
+
+#get service name (for if it is in a folder)
+tempbase=`basename "$service"`
+echo $tempbase
+#if folder e.g. (bank/) is entered as the service
+if [[ ! "$service" =~ ./$ ]];then
+        echo "base - $tempbase"
+	lockname="$username-$tempbase"
+else
+	echo "invalid service entered"
+	exit 3
+fi
+./P.sh "$lockname"
+echo "in lock"
+sleep 5
+#check if path exists, if so check for update character ('f' as argument 3, print out error if not execute lock removal script regardless (V.sh)
+if [ -e "$path" ]; then
+	if [[ $update == "$respect" ]]; then
+		echo "OK: service updated"
+		echo -e "$payload" > "$username/$service"
+		./V.sh "$lockname"
+		exit 0
+	else
+		echo "Error: service already exists"
+		./V.sh "$lockname"
+		exit 4
+	fi
+
+fi
+#assign variable which contains just the path of the user and service i.e. user/service
+name=`dirname "$path"`
+
+#Check if path leads to a directory, which would mean service is nested in a folder e.g. service = bank/aib.ie and requires a folder to be made
+
+if [ ! -d "$name" ];then
+	mkdir -p "$name"
+fi
+
+#put the payload (i.e. login details) into the desired service file, then execute the lock removal script (V.sh)
+echo -e "$payload" > "$path"
+echo "OK: service created"
+./V.sh "$lockname"
+exit 0
